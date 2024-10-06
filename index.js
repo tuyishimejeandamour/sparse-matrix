@@ -1,25 +1,11 @@
 const fs = require('fs').promises;
 const readline = require('readline');
 
-class SparseMatrix {
-    constructor(input) {
-        this.rows = 0;
-        this.cols = 0;
-        this.elements = new Map();
-
-        if (typeof input === 'string') {
-            this.loadPromise = this.loadFromFile(input);
-        } else if (Array.isArray(input) && input.length === 2) {
-            [this.rows, this.cols] = input;
-        } else {
-            throw new Error('Invalid input for SparseMatrix constructor');
-        }
-    }
-
-    async loadFromFile(filename) {
+class FileHandler {
+    static async readMatrix(filename) {
         try {
-            const fileContent = await fs.readFile(filename, 'utf8');
-            const lines = fileContent.split('\n').map(line => line.trim()).filter(line => line);
+            const content = await fs.readFile(filename, 'utf8');
+            const lines = content.split('\n').map(line => line.trim()).filter(line => line);
 
             if (lines.length < 3) {
                 throw new Error('Input file has insufficient data');
@@ -32,28 +18,55 @@ class SparseMatrix {
                 throw new Error('Input file has wrong format');
             }
 
-            this.rows = parseInt(rowMatch[1]);
-            this.cols = parseInt(colMatch[1]);
+            const rows = parseInt(rowMatch[1]);
+            const cols = parseInt(colMatch[1]);
+            const elements = [];
 
             for (let i = 2; i < lines.length; i++) {
                 const match = lines[i].match(/\((\d+),\s*(\d+),\s*(-?\d+)\)/);
                 if (match) {
                     const [, row, col, value] = match;
-                    this.setElement(parseInt(row), parseInt(col), parseInt(value));
+                    elements.push([parseInt(row), parseInt(col), parseInt(value)]);
                 }
             }
+
+            return { rows, cols, elements };
         } catch (error) {
-            throw new Error(`Unable to open input file: ${error.message}`);
+            throw new Error(`Unable to read input file: ${error.message}`);
         }
     }
 
-    getElement(currRow, currCol) {
-        const key = `${currRow},${currCol}`;
-        return this.elements.get(key) || 0;
+    static async writeMatrix(filename, matrix) {
+        try {
+            let content = `rows=${matrix.rows}\n`;
+            content += `cols=${matrix.cols}\n`;
+            for (const [row, col, value] of matrix) {
+                content += `(${row}, ${col}, ${value})\n`;
+            }
+            await fs.writeFile(filename, content);
+        } catch (error) {
+            throw new Error(`Unable to write output file: ${error.message}`);
+        }
+    }
+}
+
+class SparseMap {
+    constructor(rows, cols) {
+        this.rows = rows;
+        this.cols = cols;
+        this.elements = new Map();
     }
 
-    setElement(currRow, currCol, value) {
-        const key = `${currRow},${currCol}`;
+    getKey(row, col) {
+        return row * this.cols + col;
+    }
+
+    get(row, col) {
+        return this.elements.get(this.getKey(row, col)) || 0;
+    }
+
+    set(row, col, value) {
+        const key = this.getKey(row, col);
         if (value !== 0) {
             this.elements.set(key, value);
         } else {
@@ -61,33 +74,74 @@ class SparseMatrix {
         }
     }
 
-    add(other) {
-        // if (this.rows !== other.rows || this.cols !== other.cols) {
-        //     throw new Error('Matrix dimensions do not match for addition');
-        // }
-
-        const result = new SparseMatrix([this.rows, this.cols]);
+    *[Symbol.iterator]() {
         for (const [key, value] of this.elements) {
-            result.elements.set(key, value);
+            const row = Math.floor(key / this.cols);
+            const col = key % this.cols;
+            yield [row, col, value];
         }
-        for (const [key, value] of other.elements) {
-            const [row, col] = key.split(',').map(Number);
+    }
+
+    get size() {
+        return this.elements.size;
+    }
+}
+
+class SparseMatrix {
+    constructor(input) {
+        if (input instanceof SparseMap) {
+            this.data = input;
+        } else if (Array.isArray(input) && input.length === 2) {
+            this.data = new SparseMap(input[0], input[1]);
+        } else {
+            throw new Error('Invalid input for SparseMatrix constructor');
+        }
+    }
+
+    static async fromFile(filename) {
+        const { rows, cols, elements } = await FileHandler.readMatrix(filename);
+        const matrix = new SparseMatrix([rows, cols]);
+        for (const [row, col, value] of elements) {
+            matrix.setElement(row, col, value);
+        }
+        return matrix;
+    }
+
+    get rows() {
+        return this.data.rows;
+    }
+
+    get cols() {
+        return this.data.cols;
+    }
+
+    getElement(row, col) {
+        return this.data.get(row, col);
+    }
+
+    setElement(row, col, value) {
+        this.data.set(row, col, value);
+    }
+
+    add(other) {
+        
+        const result = new SparseMatrix([this.rows, this.cols]);
+        for (const [row, col, value] of this.data) {
+            result.setElement(row, col, value);
+        }
+        for (const [row, col, value] of other.data) {
             result.setElement(row, col, result.getElement(row, col) + value);
         }
         return result;
     }
 
     subtract(other) {
-        // if (this.rows !== other.rows || this.cols !== other.cols) {
-        //     throw new Error('Matrix dimensions do not match for subtraction');
-        // }
 
         const result = new SparseMatrix([this.rows, this.cols]);
-        for (const [key, value] of this.elements) {
-            result.elements.set(key, value);
+        for (const [row, col, value] of this.data) {
+            result.setElement(row, col, value);
         }
-        for (const [key, value] of other.elements) {
-            const [row, col] = key.split(',').map(Number);
+        for (const [row, col, value] of other.data) {
             result.setElement(row, col, result.getElement(row, col) - value);
         }
         return result;
@@ -99,10 +153,8 @@ class SparseMatrix {
         }
 
         const result = new SparseMatrix([this.rows, other.cols]);
-        for (const [key1, value1] of this.elements) {
-            const [i, k] = key1.split(',').map(Number);
-            for (const [key2, value2] of other.elements) {
-                const [row, j] = key2.split(',').map(Number);
+        for (const [i, k, value1] of this.data) {
+            for (const [row, j, value2] of other.data) {
                 if (k === row) {
                     const currVal = result.getElement(i, j);
                     result.setElement(i, j, currVal + value1 * value2);
@@ -113,17 +165,15 @@ class SparseMatrix {
     }
 
     async saveToFile(filename) {
-        let content = `rows=${this.rows}\n`;
-        content += `cols=${this.cols}\n`;
-        for (const [key, value] of this.elements) {
-            const [row, col] = key.split(',');
-            content += `(${row}, ${col}, ${value})\n`;
-        }
-        await fs.writeFile(filename, content);
+        await FileHandler.writeMatrix(filename, this);
     }
 
     toString() {
-        return `Matrix ${this.rows}x${this.cols} with ${this.elements.size} non-zero elements`;
+        return `Matrix ${this.rows}x${this.cols} with ${this.data.size} non-zero elements`;
+    }
+
+    *[Symbol.iterator]() {
+        yield* this.data;
     }
 }
 
@@ -140,11 +190,8 @@ async function main() {
         const file1 = await new Promise(resolve => rl.question("Enter the first input file path: ", resolve));
         const file2 = await new Promise(resolve => rl.question("Enter the second input file path: ", resolve));
 
-        const matrix1 = new SparseMatrix(file1);
-        const matrix2 = new SparseMatrix(file2);
-
-        await matrix1.loadPromise;
-        await matrix2.loadPromise;
+        const matrix1 = await SparseMatrix.fromFile(file1);
+        const matrix2 = await SparseMatrix.fromFile(file2);
 
         let result;
         switch (choice) {
