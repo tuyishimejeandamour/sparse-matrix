@@ -189,27 +189,34 @@ async function main() {
 
         const file1 = await new Promise(resolve => rl.question("Enter the first input file path: ", resolve));
         const file2 = await new Promise(resolve => rl.question("Enter the second input file path: ", resolve));
+        const resultfile = await new Promise(resolve => rl.question("Enter the result file path (optional): ", resolve));
 
         const matrix1 = await SparseMatrix.fromFile(file1);
         const matrix2 = await SparseMatrix.fromFile(file2);
 
         let result;
+        //console start time
         switch (choice) {
             case '1':
+                console.time('Matrix add Time start');
                 result = matrix1.add(matrix2);
                 break;
             case '2':
+                console.time('Matrix sub Time start');
                 result = matrix1.subtract(matrix2);
                 break;
             case '3':
+                console.time('Matrix mul Time start');
                 result = matrix1.multiply(matrix2);
                 break;
             default:
                 throw new Error('Invalid operation choice');
         }
+        console.timeEnd('Matrix Operation Time start');
 
-        const outputFile = 'result.txt';
+        const outputFile = resultfile ? resultfile:'result.txt';
         await result.saveToFile(outputFile);
+        //console end time
         console.log(`Result saved to ${outputFile}`);
     } catch (error) {
         console.error("Error:", error.message);
