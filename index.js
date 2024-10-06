@@ -198,21 +198,24 @@ async function main() {
         //console start time
         switch (choice) {
             case '1':
-                console.time('Matrix add Time start');
+                console.time('Matrix add Time');
                 result = matrix1.add(matrix2);
+                console.timeEnd('Matrix add Time');
+
                 break;
             case '2':
-                console.time('Matrix sub Time start');
+                console.time('Matrix sub Time');
                 result = matrix1.subtract(matrix2);
+                console.timeEnd('Matrix sub Time');
                 break;
             case '3':
-                console.time('Matrix mul Time start');
+                console.time('Matrix mul Time');
                 result = matrix1.multiply(matrix2);
+                console.timeEnd('Matrix mul Time');
                 break;
             default:
                 throw new Error('Invalid operation choice');
         }
-        console.timeEnd('Matrix Operation Time start');
 
         const outputFile = resultfile ? resultfile:'result.txt';
         await result.saveToFile(outputFile);
